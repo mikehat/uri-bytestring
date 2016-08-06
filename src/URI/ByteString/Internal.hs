@@ -105,7 +105,7 @@ aggressiveNormalization = URINormalizationOptions True True True True True True 
 -- | @toAbsolute scheme ref@ converts @ref@ to an absolute URI.
 -- If @ref@ is already absolute, then it is unchanged.
 toAbsolute :: Scheme -> URIRef a -> URIRef Absolute
-toAbsolute scheme (RelativeRef {..}) = URI scheme rrAuthority rrPath rrQuery rrFragment
+toAbsolute scheme (RelativeRef {..}) = URI scheme rrAuthority rrPath rrQuery rrQueryString rrFragment
 toAbsolute _ uri@(URI {..}) = uri
 
 
@@ -160,7 +160,7 @@ normalizeURI o@URINormalizationOptions {..} URI {..} =
     sCase
       | unoDowncaseScheme = downcaseBS
       | otherwise = id
-    rr = RelativeRef uriAuthority uriPath uriQuery uriFragment
+    rr = RelativeRef uriAuthority uriPath uriQuery uriQueryString uriFragment
 
 
 -------------------------------------------------------------------------------
@@ -348,8 +348,8 @@ uriParser' :: URIParserOptions -> URIParser (URIRef Absolute)
 uriParser' opts = do
   scheme <- schemeParser
   void $ word8 colon `orFailWith` MalformedScheme MissingColon
-  RelativeRef authority path query fragment <- relativeRefParser' opts
-  return $ URI scheme authority path query fragment
+  RelativeRef authority path query querystring fragment <- relativeRefParser' opts
+  return $ URI scheme authority path query querystring fragment
 
 
 -------------------------------------------------------------------------------
@@ -363,12 +363,12 @@ relativeRefParser = unParser' . relativeRefParser'
 relativeRefParser' :: URIParserOptions -> URIParser (URIRef Relative)
 relativeRefParser' opts = do
   (authority, path) <- hierPartParser <|> rrPathParser
-  query <- queryParser opts
+  (mquerystring,query) <- queryParser opts
   frag  <- mFragmentParser
   case frag of
     Just _ -> endOfInput `orFailWith` MalformedFragment
     Nothing -> endOfInput `orFailWith` MalformedQuery
-  return $ RelativeRef authority path query frag
+  return $ RelativeRef authority path query mquerystring frag
 
 
 -------------------------------------------------------------------------------
@@ -579,18 +579,19 @@ firstRelRefSegmentParser = A.takeWhile (inClass (pchar \\ ":")) `orFailWith` Mal
 -- is what most users are expecting to see. One alternative could be
 -- to just expose the query string as a string and offer functions on
 -- URI to parse a query string to a Query.
-queryParser :: URIParserOptions -> URIParser Query
+queryParser :: URIParserOptions -> URIParser (Maybe ByteString,Query)
 queryParser opts = do
   mc <- peekWord8 `orFailWith` OtherError "impossible peekWord8 error"
   case mc of
     Just c
-      | c == question -> skip' 1 *> itemsParser
-      | c == hash     -> pure mempty
+      | c == question -> skip' 1 *> match' itemsParser >>= pure . fmap_fst (Just . urlDecodeQuery)
+      | c == hash     -> pure (Nothing,mempty)
       | otherwise     -> fail' MalformedPath
-    _      -> pure mempty
+    _      -> pure (Nothing,mempty)
   where
     itemsParser = Query . filter neQuery <$> A.sepBy' (queryItemParser opts) (word8' ampersand)
     neQuery (k, _) = not (BS.null k)
+    fmap_fst f (a,b) = (f a,b)
 
 
 -------------------------------------------------------------------------------
@@ -843,6 +844,10 @@ orFailWith p e = Parser' p <|> fail' e
 fail' :: (Show e) => e -> Parser' e a
 fail' = fail . show
 
+-------------------------------------------------------------------------------
+-- | Lifted 'match' 
+match' :: Parser' e a -> Parser' e (ByteString,a)
+match' = Parser' . A.match . unParser'
 
 -------------------------------------------------------------------------------
 parseBetween :: (Alternative m, Monad m) => Int -> Int -> m a -> m [a]

@@ -42,10 +42,12 @@ instance Arbitrary (URIRef Absolute) where
                   <*> arbitrary
                   <*> arbitrary
                   <*> arbitrary
+                  <*> arbitrary
 
 
 instance Arbitrary (URIRef Relative) where
   arbitrary = RelativeRef <$> arbitrary
+                          <*> arbitrary
                           <*> arbitrary
                           <*> arbitrary
                           <*> arbitrary

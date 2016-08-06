@@ -153,7 +153,7 @@ rrFragmentL =
 uriSchemeL :: Lens' (URIRef Absolute) Scheme
 uriSchemeL = lens uriScheme setter where
   setter :: URIRef Absolute  -> Scheme -> URIRef Absolute
-  setter (URI _ b c d e) a' = URI a' b c d e
+  setter (URI _ b c d e f) a' = URI a' b c d e f
 {-# INLINE uriSchemeL #-}
 
 
@@ -164,8 +164,8 @@ authorityL = lens getter setter where
   getter (URI {..}) = uriAuthority
   getter (RelativeRef {..}) = rrAuthority
   setter :: URIRef a -> Maybe Authority -> URIRef a
-  setter (URI a _ c d e) b' = URI a b' c d e
-  setter (RelativeRef _ c d e) b' = RelativeRef b' c d e
+  setter (URI a _ c d e f) b' = URI a b' c d e f
+  setter (RelativeRef _ c d e f) b' = RelativeRef b' c d e f
 {-# INLINE authorityL #-}
 
 
@@ -176,8 +176,8 @@ pathL = lens getter setter where
   getter (URI {..}) = uriPath
   getter (RelativeRef {..}) = rrPath
   setter :: URIRef a -> ByteString -> URIRef a
-  setter (URI a b _ d e) c' = URI a b c' d e
-  setter (RelativeRef b _ d e) c' = RelativeRef b c' d e
+  setter (URI a b _ d e f) c' = URI a b c' d e f
+  setter (RelativeRef b _ d e f) c' = RelativeRef b c' d e f
 {-# INLINE pathL #-}
 
 
@@ -188,9 +188,21 @@ queryL = lens getter setter where
   getter (URI {..}) = uriQuery
   getter (RelativeRef {..}) = rrQuery
   setter :: URIRef a -> Query -> URIRef a
-  setter (URI a b c _ e) d' = URI a b c d' e
-  setter (RelativeRef b c _ e) d' = RelativeRef b c d' e
+  setter (URI a b c _ e f) d' = URI a b c d' e f
+  setter (RelativeRef b c _ e f) d' = RelativeRef b c d' e f
 {-# INLINE queryL #-}
+
+
+-------------------------------------------------------------------------------
+queryStringL :: Lens' (URIRef a) (Maybe ByteString)
+queryStringL = lens getter setter where
+  getter :: URIRef a -> Maybe ByteString
+  getter (URI {..}) = uriQueryString
+  getter (RelativeRef {..}) = rrQueryString
+  setter :: URIRef a -> Maybe ByteString -> URIRef a
+  setter (URI a b c d _ f) e' = URI a b c d e' f
+  setter (RelativeRef b c d _ f) e' = RelativeRef b c d e' f
+{-# INLINE queryStringL #-}
 
 
 -------------------------------------------------------------------------------
@@ -200,8 +212,8 @@ fragmentL = lens getter setter where
   getter (URI {..}) = uriFragment
   getter (RelativeRef {..}) = rrFragment
   setter :: URIRef a -> Maybe ByteString -> URIRef a
-  setter (URI a b c d _) e' = URI a b c d e'
-  setter (RelativeRef b c d _) e' = RelativeRef b c d e'
+  setter (URI a b c d e _) f' = URI a b c d e f'
+  setter (RelativeRef b c d e _) f' = RelativeRef b c d e f'
 {-# INLINE fragmentL #-}
 
 

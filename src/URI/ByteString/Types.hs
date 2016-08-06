@@ -63,11 +63,13 @@ data URIRef a where
          , uriAuthority :: Maybe Authority
          , uriPath :: ByteString
          , uriQuery :: Query
+         , uriQueryString :: Maybe ByteString
          , uriFragment :: Maybe ByteString
          } -> URIRef Absolute
   RelativeRef :: { rrAuthority :: Maybe Authority
                  , rrPath :: ByteString
                  , rrQuery :: Query
+                 , rrQueryString :: Maybe ByteString
                  , rrFragment :: Maybe ByteString
                  } -> URIRef Relative
 

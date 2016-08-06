@@ -42,6 +42,7 @@ parseUriTests = testGroup "parseUri"
           "/"
           mempty
           Nothing
+          Nothing
   , testParseHost "http://www.example.org" "www.example.org"
   -- IPV4
   , testParseHost "http://192.168.1.1" "192.168.1.1"
@@ -60,6 +61,7 @@ parseUriTests = testGroup "parseUri"
           (Just (Authority (Just (UserInfo "user" "pass:wo rd")) (Host "www.example.org") Nothing))
           ""
           (Query [("foo", "bar"), ("foo", "baz quux")])
+          (Just "foo=bar&foo=baz quux")
           (Just "frag")
   -- trailing &
   , testParses "http://www.example.org?foo=bar&" $
@@ -67,6 +69,7 @@ parseUriTests = testGroup "parseUri"
           (Just (Authority Nothing (Host "www.example.org") Nothing))
           ""
           (Query [("foo", "bar")])
+          (Just "foo=bar&")
           Nothing
   , testParses "http://www.google.com:80/aclk?sa=l&ai=CChPOVvnoU8fMDI_QsQeE4oGwDf664-EF7sq01HqV1MMFCAAQAigDUO3VhpcDYMnGqYvApNgPoAGq3vbiA8gBAaoEKE_QQwekDUoMeW9IQghV4HRuzL_l-7vVjlML559kix6XOcC1c4Tb9xeAB76hiR2QBwGoB6a-Gw&sig=AOD64_3Ulyu0DcDsc1AamOIxq63RF9u4zQ&rct=j&q=&ved=0CCUQ0Qw&adurl=http://www.aruba.com/where-to-stay/hotels-and-resorts%3Ftid%3D122"
       URI { uriScheme = Scheme {schemeBS = "http"}
@@ -81,6 +84,7 @@ parseUriTests = testGroup "parseUri"
               ,("ved", "0CCUQ0Qw")
               ,("adurl", "http://www.aruba.com/where-to-stay/hotels-and-resorts?tid=122")
               ]}
+          , uriQueryString = Just "sa=l&ai=CChPOVvnoU8fMDI_QsQeE4oGwDf664-EF7sq01HqV1MMFCAAQAigDUO3VhpcDYMnGqYvApNgPoAGq3vbiA8gBAaoEKE_QQwekDUoMeW9IQghV4HRuzL_l-7vVjlML559kix6XOcC1c4Tb9xeAB76hiR2QBwGoB6a-Gw&sig=AOD64_3Ulyu0DcDsc1AamOIxq63RF9u4zQ&rct=j&q=&ved=0CCUQ0Qw&adurl=http://www.aruba.com/where-to-stay/hotels-and-resorts?tid=122"
           , uriFragment = Nothing
           }
 
@@ -90,6 +94,7 @@ parseUriTests = testGroup "parseUri"
           (Just (Authority Nothing (Host "www.example.org") Nothing))
           "/foo"
           mempty
+          Nothing
           (Just "bar")
   , testParses "http://www.example.org/foo#" $
       URI (Scheme "http")
@@ -104,6 +109,7 @@ parseUriTests = testGroup "parseUri"
           (Just (Authority Nothing (Host "www.example.org") Nothing))
           ""
           (Query [("listParam[]", "foo,bar")])
+          (Just "listParam[]=foo,bar")
           Nothing
 
   , testParses "https://www.example.org?listParam%5B%5D=foo,bar" $
@@ -111,6 +117,7 @@ parseUriTests = testGroup "parseUri"
           (Just (Authority Nothing (Host "www.example.org") Nothing))
           ""
           (Query [("listParam[]", "foo,bar")])
+          (Just "listParam[]=foo,bar")
           Nothing
 
   , testParses "https://www.example.org#only-fragment" $
@@ -118,12 +125,14 @@ parseUriTests = testGroup "parseUri"
           (Just (Authority Nothing (Host "www.example.org") Nothing))
           ""
           (Query [])
+          Nothing
           (Just "only-fragment")
   ,  testParses "https://www.example.org/weird%20path" $
        URI (Scheme "https")
            (Just (Authority Nothing (Host "www.example.org") Nothing))
            "/weird path"
            (Query [])
+           Nothing
            Nothing
 
   , parseTestURI strictURIParserOptions "http://www.example.org/." $
@@ -133,12 +142,14 @@ parseUriTests = testGroup "parseUri"
           "/."
           (Query [])
           Nothing
+          Nothing
   , parseTestURI strictURIParserOptions "http:/." $
       Right $ URI
           (Scheme "http")
           Nothing
           "/."
           (Query [])
+          Nothing
           Nothing
 
   , roundtripTestURI strictURIParserOptions "ftp://ftp.is.co.za/rfc/rfc1808.txt"
@@ -155,6 +166,7 @@ parseUriTests = testGroup "parseUri"
           "verysimple"
           (Query [])
           Nothing
+          Nothing
   , parseTestRelativeRef strictURIParserOptions "this:that/thap/sub?1=2" $
       Left $ MalformedPath
   , parseTestRelativeRef strictURIParserOptions "./this:that/thap/sub?1=2" $
@@ -162,6 +174,7 @@ parseUriTests = testGroup "parseUri"
           Nothing
           "./this:that/thap/sub"
           (Query [("1", "2")])
+          (Just "1=2")
           Nothing
   ]
 
@@ -258,6 +271,7 @@ testParseHost uri expectedHost =
         mempty
         mempty
         Nothing
+        Nothing
 
 
 
@@ -276,7 +290,7 @@ testParses' opts s u = testGroup "testParses'"
 
 -------------------------------------------------------------------------------
 makeRelativeRefTyped :: URI -> RelativeRef
-makeRelativeRefTyped (URI _ a p q f) = RelativeRef a p q f
+makeRelativeRefTyped (URI _ a p q qs f) = RelativeRef a p q qs f
 
 
 -------------------------------------------------------------------------------
@@ -329,6 +343,7 @@ serializeURITests = testGroup "serializeURIRef"
                  (Just (Authority (Just ui) (Host "www.example.org") (Just port)))
                  "/"
                  (Query [("foo", "bar")])
+                 Nothing
                  (Just "somefragment")
        let res = BB.toLazyByteString (serializeURIRef uri)
        res @?= "http://user:pass@www.example.org:123/?foo=bar#somefragment"
@@ -338,6 +353,7 @@ serializeURITests = testGroup "serializeURIRef"
                  "/weird path"
                  (Query [])
                  Nothing
+                 Nothing
        let res = BB.toLazyByteString (serializeURIRef uri)
        res @?= "http://www.example.org:123/weird%20path"
   , testCase "encodes relative refs" $ do
@@ -345,6 +361,7 @@ serializeURITests = testGroup "serializeURIRef"
       let uri = RelativeRef (Just (Authority (Just ui) (Host "www.example.org") (Just port)))
                 "/"
                 (Query [("foo", "bar")])
+                Nothing
                 (Just "somefragment")
       let res = BB.toLazyByteString (serializeURIRef uri)
       res @?= "//user:pass@www.example.org:123/?foo=bar#somefragment"

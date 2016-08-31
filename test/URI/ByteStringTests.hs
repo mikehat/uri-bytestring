@@ -83,6 +83,13 @@ parseUriTests = testGroup "parseUri"
               ]}
           , uriFragment = Nothing
           }
+  , testParsesT "http://www.google.com:80/aclk?sa=l&ai=CChPOVvnoU8fMDI_QsQeE4oGwDf664-EF7sq01HqV1MMFCAAQAigDUO3VhpcDYMnGqYvApNgPoAGq3vbiA8gBAaoEKE_QQwekDUoMeW9IQghV4HRuzL_l-7vVjlML559kix6XOcC1c4Tb9xeAB76hiR2QBwGoB6a-Gw&sig=AOD64_3Ulyu0DcDsc1AamOIxq63RF9u4zQ&rct=j&q=&ved=0CCUQ0Qw&adurl=http://www.aruba.com/where-to-stay/hotels-and-resorts%3Ftid%3D122"
+      URI { uriScheme = Scheme {schemeBS = "http"}
+          , uriAuthority = Just Authority {authorityUserInfo = Nothing, authorityHost = Host {hostBS = "www.google.com"}, authorityPort = Just (Port 80)}
+          , uriPath = "/aclk"
+          , uriQuery = Just $ B8.pack "sa=l&ai=CChPOVvnoU8fMDI_QsQeE4oGwDf664-EF7sq01HqV1MMFCAAQAigDUO3VhpcDYMnGqYvApNgPoAGq3vbiA8gBAaoEKE_QQwekDUoMeW9IQghV4HRuzL_l-7vVjlML559kix6XOcC1c4Tb9xeAB76hiR2QBwGoB6a-Gw&sig=AOD64_3Ulyu0DcDsc1AamOIxq63RF9u4zQ&rct=j&q=&ved=0CCUQ0Qw&adurl=http://www.aruba.com/where-to-stay/hotels-and-resorts?tid=122"
+          , uriFragment = Nothing
+          }
 
   , testParseFailure "$$$$://www.example.org/" (MalformedScheme NonAlphaLeading)
   , testParses "http://www.example.org/foo#bar" $
@@ -113,12 +120,31 @@ parseUriTests = testGroup "parseUri"
           (Query [("listParam[]", "foo,bar")])
           Nothing
 
+  , testParsesT "https://www.example.org?listParam%5B%5D=foo,bar" $
+      URI (Scheme "https")
+          (Just (Authority Nothing (Host "www.example.org") Nothing))
+          ""
+          (Just "listParam[]=foo,bar" :: Maybe ByteString)
+          Nothing
+
   , testParses "https://www.example.org#only-fragment" $
       URI (Scheme "https")
           (Just (Authority Nothing (Host "www.example.org") Nothing))
           ""
           (Query [])
           (Just "only-fragment")
+  , testParsesT "https://www.example.org#only-fragment" $
+      URI (Scheme "https")
+          (Just (Authority Nothing (Host "www.example.org") Nothing))
+          ""
+          (Nothing :: Maybe ByteString)
+          (Just "only-fragment")
+  , testParsesT "https://www.example.org?#empty-query" $
+      URI (Scheme "https")
+          (Just (Authority Nothing (Host "www.example.org") Nothing))
+          ""
+          (Just B8.empty)
+          (Just "empty-query")
   ,  testParses "https://www.example.org/weird%20path" $
        URI (Scheme "https")
            (Just (Authority Nothing (Host "www.example.org") Nothing))
@@ -250,6 +276,11 @@ testParses = testParses' strictURIParserOptions
 
 
 -------------------------------------------------------------------------------
+testParsesT :: (QueryT a) => ByteString -> URIRefT a Absolute -> TestTree
+testParsesT = testParsesT' strictURIParserOptions
+
+
+-------------------------------------------------------------------------------
 testParseHost :: ByteString -> ByteString -> TestTree
 testParseHost uri expectedHost =
   testParses uri $
@@ -275,8 +306,21 @@ testParses' opts s u = testGroup "testParses'"
 
 
 -------------------------------------------------------------------------------
+testParsesT' :: (QueryT a) => URIParserOptions -> ByteString -> URIRefT a Absolute -> TestTree
+testParsesT' opts s u = testGroup "testParsesT'"
+    [ parseTestURIT opts s $ Right u
+    , parseTestRelativeRefT opts (makeRelativeRefBS s) $ Right (makeRelativeRefTypedT u)
+    ]
+
+
+-------------------------------------------------------------------------------
 makeRelativeRefTyped :: URI -> RelativeRef
 makeRelativeRefTyped (URI _ a p q f) = RelativeRef a p q f
+
+
+-------------------------------------------------------------------------------
+makeRelativeRefTypedT :: (QueryT a) => URIRefT a Absolute -> URIRefT a Relative
+makeRelativeRefTypedT (URI _ a p q f) = RelativeRef a p q f
 
 
 -------------------------------------------------------------------------------
@@ -301,6 +345,16 @@ parseTestURI opts s r = testCase (B8.unpack s) $ parseURI opts s @?= r
 
 
 -------------------------------------------------------------------------------
+parseTestURIT
+    :: (QueryT a)
+    => URIParserOptions
+    -> ByteString
+    -> Either URIParseError (URIRefT a Absolute)
+    -> TestTree
+parseTestURIT opts s r = testCase (B8.unpack s) $ parseURIT opts s @?= r
+
+
+-------------------------------------------------------------------------------
 roundtripTestURI
     :: URIParserOptions
     -> ByteString
@@ -317,6 +371,17 @@ parseTestRelativeRef
     -> TestTree
 parseTestRelativeRef opts s r =
   testCase (B8.unpack s) $ parseRelativeRef opts s @?= r
+
+
+-------------------------------------------------------------------------------
+parseTestRelativeRefT
+    :: (QueryT a)
+    => URIParserOptions
+    -> ByteString
+    -> Either URIParseError (URIRefT a Relative)
+    -> TestTree
+parseTestRelativeRefT opts s r =
+  testCase (B8.unpack s) $ parseRelativeRefT opts s @?= r
 
 
 -------------------------------------------------------------------------------

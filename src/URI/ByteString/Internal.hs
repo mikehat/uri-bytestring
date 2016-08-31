@@ -3,6 +3,7 @@
 {-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE RecordWildCards            #-}
 {-# LANGUAGE TupleSections              #-}
+{-# LANGUAGE FlexibleInstances          #-}
 module URI.ByteString.Internal where
 
 -------------------------------------------------------------------------------
@@ -104,7 +105,7 @@ aggressiveNormalization = URINormalizationOptions True True True True True True 
 -------------------------------------------------------------------------------
 -- | @toAbsolute scheme ref@ converts @ref@ to an absolute URI.
 -- If @ref@ is already absolute, then it is unchanged.
-toAbsolute :: Scheme -> URIRef a -> URIRef Absolute
+toAbsolute :: Scheme -> URIRefT a b -> URIRefT a Absolute
 toAbsolute scheme (RelativeRef {..}) = URI scheme rrAuthority rrPath rrQuery rrFragment
 toAbsolute _ uri@(URI {..}) = uri
 
@@ -119,19 +120,19 @@ toAbsolute _ uri@(URI {..}) = uri
 --
 -- >>> BB.toLazyByteString $ serializeURIRef $ URI {uriScheme = Scheme {schemeBS = "http"}, uriAuthority = Just (Authority {authorityUserInfo = Nothing, authorityHost = Host {hostBS = "www.example.org"}, authorityPort = Nothing}), uriPath = "/foo", uriQuery = Query {queryPairs = [("bar","baz")]}, uriFragment = Just "quux"}
 -- "http://www.example.org/foo?bar=baz#quux"
-serializeURIRef :: URIRef a -> Builder
+serializeURIRef :: (QueryT a) => URIRefT a b -> Builder
 serializeURIRef = normalizeURIRef noNormalization
 
 
 -------------------------------------------------------------------------------
 -- | Like 'serializeURIRef', with conversion into a strict 'ByteString'.
-serializeURIRef' :: URIRef a -> ByteString
+serializeURIRef' :: (QueryT a) => URIRefT a b -> ByteString
 serializeURIRef' = BB.toByteString . serializeURIRef
 
 
 -------------------------------------------------------------------------------
 -- | Serialize a URI into a Builder.
-serializeURI :: URIRef Absolute -> Builder
+serializeURI :: (QueryT a) => URIRefT a Absolute -> Builder
 serializeURI = normalizeURIRef noNormalization
 {-# DEPRECATED serializeURI "Use 'serializeURIRef' instead" #-}
 
@@ -141,18 +142,18 @@ serializeURI = normalizeURIRef noNormalization
 -- URI normalization. If your goal is the fastest serialization speed
 -- possible, 'serializeURIRef' will be fine. If you intend on
 -- comparing URIs (say for caching purposes), you'll want to use this.
-normalizeURIRef :: URINormalizationOptions -> URIRef a -> Builder
+normalizeURIRef :: (QueryT a) => URINormalizationOptions -> URIRefT a b -> Builder
 normalizeURIRef o uri@(URI {..}) = normalizeURI o uri
 normalizeURIRef o uri@(RelativeRef {}) = normalizeRelativeRef o Nothing uri
 
 
 -------------------------------------------------------------------------------
-normalizeURIRef' :: URINormalizationOptions -> URIRef a -> ByteString
+normalizeURIRef' :: (QueryT a) => URINormalizationOptions -> URIRefT a b -> ByteString
 normalizeURIRef' o = BB.toByteString . normalizeURIRef o
 
 
 -------------------------------------------------------------------------------
-normalizeURI :: URINormalizationOptions -> URIRef Absolute -> Builder
+normalizeURI :: (QueryT a) => URINormalizationOptions -> URIRefT a Absolute -> Builder
 normalizeURI o@URINormalizationOptions {..} URI {..} =
   scheme <> BB.fromString ":" <> normalizeRelativeRef o (Just uriScheme) rr
   where
@@ -164,7 +165,7 @@ normalizeURI o@URINormalizationOptions {..} URI {..} =
 
 
 -------------------------------------------------------------------------------
-normalizeRelativeRef :: URINormalizationOptions -> Maybe Scheme -> URIRef Relative -> Builder
+normalizeRelativeRef :: (QueryT a) => URINormalizationOptions -> Maybe Scheme -> URIRefT a Relative -> Builder
 normalizeRelativeRef o@URINormalizationOptions {..} mScheme RelativeRef {..} =
   authority <> path <> query <> fragment
   where
@@ -230,35 +231,67 @@ removeDotSegments path = mconcat (rl2L (go path (RL [])))
 
 -------------------------------------------------------------------------------
 -- | Like 'serializeURI', with conversion into a strict 'ByteString'.
-serializeURI' :: URIRef Absolute -> ByteString
+serializeURI' :: (QueryT a) => URIRefT a Absolute -> ByteString
 serializeURI' = BB.toByteString . serializeURI
 {-# DEPRECATED serializeURI' "Use 'serializeURIRef'' instead" #-}
 
 
 -------------------------------------------------------------------------------
 -- | Like 'serializeURI', but do not render scheme.
-serializeRelativeRef :: URIRef Relative -> Builder
+serializeRelativeRef :: (QueryT a) => URIRefT a Relative -> Builder
 serializeRelativeRef = normalizeRelativeRef noNormalization Nothing
 {-# DEPRECATED serializeRelativeRef "Use 'serializeURIRef' instead" #-}
 
 
 -------------------------------------------------------------------------------
 -- | Like 'serializeRelativeRef', with conversion into a strict 'ByteString'.
-serializeRelativeRef' :: URIRef Relative -> ByteString
+serializeRelativeRef' :: (QueryT a) => URIRefT a Relative -> ByteString
 serializeRelativeRef' = BB.toByteString . serializeRelativeRef
 {-# DEPRECATED serializeRelativeRef' "Use 'serializeURIRef'' instead" #-}
 
 
 -------------------------------------------------------------------------------
-serializeQuery :: URINormalizationOptions -> Query -> Builder
-serializeQuery _ (Query []) = mempty
-serializeQuery URINormalizationOptions {..} (Query ps) =
-    c8 '?' <> mconcat (intersperse (c8 '&') (map serializePair ps'))
-  where
-    serializePair (k, v) = urlEncodeQuery k <> c8 '=' <> urlEncodeQuery v
-    ps'
-      | unoSortParameters = sortBy (comparing fst) ps
-      | otherwise = ps
+
+-- | A class to allow different handling of query strings.
+class (Show a, Eq a, Ord a) => QueryT a where
+    serializeQuery :: URINormalizationOptions -> a -> Builder
+    queryParser :: (QueryT a) => URIParserOptions -> URIParser a
+
+instance QueryT ParsedQuery where
+    serializeQuery _ (Query []) = mempty
+    serializeQuery URINormalizationOptions {..} (Query ps) =
+        c8 '?' <> mconcat (intersperse (c8 '&') (map serializePair ps'))
+      where
+        serializePair (k, v) = urlEncodeQuery k <> c8 '=' <> urlEncodeQuery v
+        ps'
+          | unoSortParameters = sortBy (comparing fst) ps
+          | otherwise = ps
+    queryParser opts = do
+      mc <- peekWord8 `orFailWith` OtherError "impossible peekWord8 error"
+      case mc of
+        Just c
+          | c == question -> skip' 1 *> itemsParser
+          | c == hash     -> pure mempty
+          | otherwise     -> fail' MalformedPath
+        _      -> pure mempty
+      where
+        itemsParser = Query . filter neQuery <$> A.sepBy' (queryItemParser opts) (word8' ampersand)
+        neQuery (k, _) = not (BS.null k)
+
+instance QueryT UnparsedQuery where
+    serializeQuery _ Nothing = mempty
+    serializeQuery URINormalizationOptions {..} (Just q) = c8 '?' <> bs q
+    queryParser opts = do
+      mc <- peekWord8 `orFailWith` OtherError "impossible peekWord8 error"
+      case mc of
+        Just c
+          | c == question -> skip' 1 *> ((A.takeWhile is_query_char) `orFailWith` MalformedQuery) >>= pure . Just . urlDecodeQuery
+          | c == hash     -> pure Nothing
+          | otherwise     -> fail' MalformedPath
+        _      -> pure Nothing
+      where
+        is_query_char c = upoValidQueryChar opts c || c == ampersand
+
 
 
 -------------------------------------------------------------------------------
@@ -326,9 +359,25 @@ c8 = BB.fromChar
 parseURI :: URIParserOptions -> ByteString -> Either URIParseError (URIRef Absolute)
 parseURI opts = parseOnly' OtherError (uriParser' opts)
 
+-- | Non-specialized 'parseURI'
+parseURIT :: (QueryT a) => URIParserOptions -> ByteString -> Either URIParseError (URIRefT a Absolute)
+parseURIT opts = parseOnly' OtherError (uriParserT' opts)
+
+-- | Like 'parseURI', but with an unparsed query string.
+parseURIUQS :: URIParserOptions -> ByteString -> Either URIParseError (URIRefT UnparsedQuery Absolute)
+parseURIUQS = parseURIT
+
 -- | Like 'parseURI', but do not parse scheme.
 parseRelativeRef :: URIParserOptions -> ByteString -> Either URIParseError (URIRef Relative)
 parseRelativeRef opts = parseOnly' OtherError (relativeRefParser' opts)
+
+-- | An unspecialized 'parseRelativeRef'
+parseRelativeRefT :: (QueryT a) => URIParserOptions -> ByteString -> Either URIParseError (URIRefT a Relative)
+parseRelativeRefT opts = parseOnly' OtherError (relativeRefParserT' opts)
+
+-- | Like 'parseRelativeRef', but with an unparsed query string.
+parseRelativeRefUQS :: URIParserOptions -> ByteString -> Either URIParseError (URIRefT UnparsedQuery Relative)
+parseRelativeRefUQS = parseRelativeRefT
 
 
 -------------------------------------------------------------------------------
@@ -351,17 +400,51 @@ uriParser' opts = do
   RelativeRef authority path query fragment <- relativeRefParser' opts
   return $ URI scheme authority path query fragment
 
+-------------------------------------------------------------------------------
+-- | Toplevel parser for URIs
+uriParserT' :: (QueryT a) => URIParserOptions -> URIParser (URIRefT a Absolute)
+uriParserT' opts = do
+  scheme <- schemeParser
+  void $ word8 colon `orFailWith` MalformedScheme MissingColon
+  RelativeRef authority path query fragment <- relativeRefParserT' opts
+  return $ URI scheme authority path query fragment
+
 
 -------------------------------------------------------------------------------
 -- | Underlying attoparsec parser. Useful for composing with your own parsers.
 relativeRefParser :: URIParserOptions -> Parser (URIRef Relative)
 relativeRefParser = unParser' . relativeRefParser'
 
+-------------------------------------------------------------------------------
+-- | Like 'relativeRefParser' but with any QueryT
+relativeRefParserT :: (QueryT a) => URIParserOptions -> Parser (URIRefT a Relative)
+relativeRefParserT = unParser' . relativeRefParserT'
+
+-------------------------------------------------------------------------------
+-- | Like 'relativeRefParser' but with an unparsed query string
+relativeRefParserUQS :: URIParserOptions -> Parser (URIRefT UnparsedQuery Relative)
+relativeRefParserUQS = relativeRefParserT
+
+
 
 -------------------------------------------------------------------------------
 -- | Toplevel parser for relative refs
 relativeRefParser' :: URIParserOptions -> URIParser (URIRef Relative)
 relativeRefParser' opts = do
+  (authority, path) <- hierPartParser <|> rrPathParser
+  query <- queryParser opts
+  frag  <- mFragmentParser
+  case frag of
+    Just _ -> endOfInput `orFailWith` MalformedFragment
+    Nothing -> endOfInput `orFailWith` MalformedQuery
+  return $ RelativeRef authority path query frag
+
+
+
+-------------------------------------------------------------------------------
+-- | Toplevel parser for relative refs
+relativeRefParserT' :: (QueryT a) => URIParserOptions -> URIParser (URIRefT a Relative)
+relativeRefParserT' opts = do
   (authority, path) <- hierPartParser <|> rrPathParser
   query <- queryParser opts
   frag  <- mFragmentParser
@@ -572,25 +655,6 @@ pathParser' repeatParser = (urlDecodeQuery . mconcat <$> repeatParser segmentPar
 firstRelRefSegmentParser :: URIParser ByteString
 firstRelRefSegmentParser = A.takeWhile (inClass (pchar \\ ":")) `orFailWith` MalformedPath
 
-
--------------------------------------------------------------------------------
--- | This parser is being a bit pragmatic. The query section in the
--- spec does not identify the key/value format used in URIs, but that
--- is what most users are expecting to see. One alternative could be
--- to just expose the query string as a string and offer functions on
--- URI to parse a query string to a Query.
-queryParser :: URIParserOptions -> URIParser Query
-queryParser opts = do
-  mc <- peekWord8 `orFailWith` OtherError "impossible peekWord8 error"
-  case mc of
-    Just c
-      | c == question -> skip' 1 *> itemsParser
-      | c == hash     -> pure mempty
-      | otherwise     -> fail' MalformedPath
-    _      -> pure mempty
-  where
-    itemsParser = Query . filter neQuery <$> A.sepBy' (queryItemParser opts) (word8' ampersand)
-    neQuery (k, _) = not (BS.null k)
 
 
 -------------------------------------------------------------------------------

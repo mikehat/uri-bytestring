@@ -56,29 +56,41 @@ newtype Query = Query { queryPairs :: [(ByteString, ByteString)] }
               deriving (Show, Eq, Monoid, Generic, Typeable, Ord)
 
 
+type ParsedQuery = Query
+type UnparsedQuery = Maybe ByteString
+
 -------------------------------------------------------------------------------
 -- | Note: URI fragment does not include the #
-data URIRef a where
+data URIRefT a b where
   URI :: { uriScheme :: Scheme
          , uriAuthority :: Maybe Authority
          , uriPath :: ByteString
-         , uriQuery :: Query
+         , uriQuery :: a
          , uriFragment :: Maybe ByteString
-         } -> URIRef Absolute
+         } -> URIRefT a Absolute
   RelativeRef :: { rrAuthority :: Maybe Authority
                  , rrPath :: ByteString
-                 , rrQuery :: Query
+                 , rrQuery :: a
                  , rrFragment :: Maybe ByteString
-                 } -> URIRef Relative
+                 } -> URIRefT a Relative
 
-deriving instance Show (URIRef a)
-deriving instance Eq (URIRef a)
--- deriving instance Generic (URIRef a)
-deriving instance Ord (URIRef a)
+deriving instance (Show a) => Show (URIRefT a b)
+deriving instance (Eq a) => Eq (URIRefT a b)
+-- deriving instance Generic (URIRefT a b)
+deriving instance (Ord a) => Ord (URIRefT a b)
 
 #ifdef WITH_TYPEABLE
-deriving instance Typeable URIRef
+deriving instance Typeable URIRefT
 #endif
+
+
+-------------------------------------------------------------------------------
+-- | A URIRefT specialized for parsed query strings
+type URIRef a = URIRefT ParsedQuery a
+
+-- | A URIRefT specialized for unparsed query strings
+type URIRefUQS a = URIRefT UnparsedQuery a
+
 
 -------------------------------------------------------------------------------
 data Absolute deriving(Typeable)
@@ -89,11 +101,19 @@ data Relative deriving(Typeable)
 
 
 -------------------------------------------------------------------------------
-type URI = URIRef Absolute
+-- | An absolute URI with a parsed query string
+type URI = URIRefT ParsedQuery Absolute
+
+-- | An absolute URI with an unparsed query string
+type URIUQS = URIRefT UnparsedQuery Absolute
 
 
 -------------------------------------------------------------------------------
+-- | A relative URI with a parsed query string
 type RelativeRef = URIRef Relative
+
+-- | A relative URI with an unparsed query string
+type RelativeRefUQS = URIRefT UnparsedQuery Relative
 
 
 -------------------------------------------------------------------------------

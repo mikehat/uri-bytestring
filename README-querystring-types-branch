@@ -1,0 +1,59 @@
+
+Here is my attempt to add an unparsed query string option to the library.
+
+### Overview
+
+Readdressing the desire for an unparsed query string option. This is the third
+of three approaches I took. The first was in the earlier pull-request that had
+the confusing @Monoid@ instance for the @Query@ type.
+
+ - Add a new constructor to @Query@ (earlier pull request)
+
+ - Retaining both the parsed and unparsed strings in URIRef (another branch in
+   my repo if anyone cares).
+
+ - Letting client code decide by adding another parameter to the @URIRef@ type
+   (this commit).
+
+
+### Rationalization
+
+Not all URI schemes use the HTTP GET-style query strings. The current
+implementation yields undefined results for those clients. This implementation
+can allow client code to define their own parsers for other query strings
+without changing the syntax for earlier client code.
+
+In fact, the main use of the current implementation (using @Query@) is for
+serializing URIs. The need for parsing a full URI all the way down to HTML form
+fields isn't likely in a typical web interaction. Web servers should only see
+the abs_path form (best to use a subset of the parsers here), and proxy servers
+don't parse the query string. A web client reading a full URI (perhaps input at
+the address bar or as a command line arg) will not need to parse the query
+string. The main case for serializing or parsing a full URI is when passing one
+from one tool to another.
+
+So, there are obviously needs for supporting both name-value query strings and
+opaque strings as well. When parsing URIs, the unparsed string may be the most
+common case.
+
+
+### Changes
+
+- Added a parent type `URIRefT a b` to parameterize both the query string type
+  and the Absolute/Relative divide. This allows specialization of the parsers
+  for all (4) instances and leaves the original interface intact. The resulting
+  code for the `UriRefT Query` instance should be exactly the same as the
+  original. The old `URIRef` type is just a specialized version of `URIRefT`.
+
+- Added a `class QueryT` to allow different parsers and serializers for both
+  instances, `Query` and `Maybe ByteString`' which also have aliases
+  `ParsedQuery` and `UnparsedQuery`.
+
+- Revised the original `serializeXXX` functions to handle `URIRefT`.
+
+- Added parsers with `T` and `UQS` suffixes to produce `URIRefT` and `URIRefT
+  ParsedQuery` instances, leaving all of the original names unchanged and
+  producing the original `URIRefT ParsedQuery` instances.
+
+- Added general and unparsed query Lenses
+

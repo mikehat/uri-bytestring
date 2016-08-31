@@ -31,7 +31,12 @@ module URI.ByteString
     , Authority(..)
     , UserInfo(..)
     , Query(..)
-    , URIRef(..)
+    , ParsedQuery
+    , UnparsedQuery
+    , QueryT(..)
+    , URIRefT(..)
+    , URIRef
+    , URIRefUQS
     , Absolute
     , Relative
     , SchemaError(..)
@@ -49,14 +54,19 @@ module URI.ByteString
     , toAbsolute
     -- * Parsing
     , parseURI
+    , parseURIUQS
+    , parseURIT
     , parseRelativeRef
+    , parseRelativeRefUQS
+    , parseRelativeRefT
     , uriParser
     , relativeRefParser
+    , relativeRefParserUQS
+    , relativeRefParserT
     -- * Serializing
     , serializeURIRef
     , serializeURIRef'
     -- ** Normalized Serialization
-    , normalizeURIRef
     , normalizeURIRef'
     -- * Low level utility functions
     , urlDecode
@@ -85,12 +95,16 @@ module URI.ByteString
     , authorityL
     , pathL
     , queryL
+    , queryTL
+    , queryUQSL
     , fragmentL
     -- ** Lenses over 'URIParserOptions'
     , upoValidQueryCharL
     -- ** Deprecated
     , URI
+    , URIUQS
     , RelativeRef
+    , RelativeRefUQS
     , serializeURI
     , serializeURI'
     , serializeRelativeRef

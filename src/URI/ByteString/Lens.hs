@@ -12,6 +12,7 @@ import           Data.Word
 import           Prelude
 -------------------------------------------------------------------------------
 import           URI.ByteString.Types
+import           URI.ByteString.Internal (QueryT)
 -------------------------------------------------------------------------------
 
 
@@ -191,6 +192,23 @@ queryL = lens getter setter where
   setter (URI a b c _ e) d' = URI a b c d' e
   setter (RelativeRef b c _ e) d' = RelativeRef b c d' e
 {-# INLINE queryL #-}
+
+
+-------------------------------------------------------------------------------
+queryTL :: (QueryT a) => Lens' (URIRefT a b) a
+queryTL = lens getter setter where
+  getter :: URIRefT a b -> a
+  getter (URI {..}) = uriQuery
+  getter (RelativeRef {..}) = rrQuery
+  setter :: URIRefT a b -> a -> URIRefT a b
+  setter (URI a b c _ e) d' = URI a b c d' e
+  setter (RelativeRef b c _ e) d' = RelativeRef b c d' e
+{-# INLINE queryTL #-}
+
+
+-------------------------------------------------------------------------------
+queryUQSL :: Lens' (URIRefT UnparsedQuery a) (Maybe ByteString)
+queryUQSL = queryTL
 
 
 -------------------------------------------------------------------------------
